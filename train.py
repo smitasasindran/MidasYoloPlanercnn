@@ -11,6 +11,7 @@ import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
 from tqdm import tqdm
 import time
+import cv2
 
 # import test  # import test.py to get mAP after each epoch
 # from models import *
