@@ -43,7 +43,7 @@ def exif_size(img):
 
 class LoadImagesAndLabels(Dataset):  # for training/testing
     def __init__(self, path, img_size=416, batch_size=16, augment=False, hyp=None, rect=False, image_weights=False,
-                 cache_labels=True, cache_images=False, single_cls=False):
+                 cache_labels=True, cache_images=False, single_cls=False, cache_midas=False):
         path = str(Path(path))  # os-agnostic
         assert os.path.isfile(path), 'File not found %s. See %s' % (path, help_url)
         with open(path, 'r') as f:
@@ -68,6 +68,10 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.label_files = [x.replace('images', 'labels').replace(os.path.splitext(x)[-1], '.txt')
                             for x in self.img_files]
 
+        # Define midas targets
+        self.midas_files = [x.replace('images', 'midas', 1).replace(os.path.splitext(x)[-1], '.png')
+                            for x in self.img_files]
+
         # Rectangular Training  https://github.com/ultralytics/yolov3/issues/232
         if self.rect:
             # Read image shapes (wh)
@@ -86,6 +90,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             i = ar.argsort()
             self.img_files = [self.img_files[i] for i in i]
             self.label_files = [self.label_files[i] for i in i]
+            self.midas_files = [self.midas_files[i] for i in i]
             self.shapes = s[i]  # wh
             ar = ar[i]
 
@@ -104,6 +109,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         # Preload labels (required for weighted CE training)
         self.imgs = [None] * n
         self.labels = [None] * n
+        self.midas = [None] * n
         if cache_labels or image_weights:  # cache labels for faster training
             self.labels = [np.zeros((0, 5))] * n
             extract_bounding_boxes = False
@@ -177,6 +183,16 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 gb += self.imgs[i].nbytes
                 pbar.desc = 'Caching images (%.1fGB)' % (gb / 1E9)
 
+        # ToDo Smita: Merge these two loops
+        if cache_midas:
+            m_gb = 0  # Gigabytes of cached images
+            pbar = tqdm(range(len(self.midas_files)), desc='Caching midas images')
+            self.midas_hw0, self.midas_hw = [None] * n, [None] * n
+            for i in pbar:  # max 10k images
+                self.midas[i], self.midas_hw0[i], self.midas_hw[i] = load_midas(self, i)  # img, hw_original, hw_resized
+                m_gb += self.midas[i].nbytes
+                pbar.desc = 'Caching midas images (%.1fGB)' % (m_gb / 1E9)
+
         # Detect corrupted images https://medium.com/joelthchao/programmatically-detect-corrupted-image-8c1b2006c3d3
         detect_corrupted_images = False
         if detect_corrupted_images:
@@ -203,16 +219,17 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         hyp = self.hyp
         if self.mosaic:
             # Load mosaic
-            img, labels = load_mosaic(self, index)
+            img, labels, midas = load_mosaic(self, index)
             shapes = None
 
         else:
             # Load image
             img, (h0, w0), (h, w) = load_image(self, index)
+            midas, (m_h0, m_w0), (m_h, m_w) = load_midas(self, index)
 
             # Letterbox
             shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
-            img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
+            img, ratio, pad, midas = letterbox(img, midas, shape, auto=False, scaleup=self.augment)
             shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
 
             # Load labels
@@ -229,7 +246,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         if self.augment:
             # Augment imagespace
             if not self.mosaic:
-                img, labels = random_affine(img, labels,
+                img, labels, midas = random_affine(img, midas, labels,
                                             degrees=hyp['degrees'],
                                             translate=hyp['translate'],
                                             scale=hyp['scale'],
@@ -256,6 +273,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             lr_flip = True
             if lr_flip and random.random() < 0.5:
                 img = np.fliplr(img)
+                midas = np.fliplr(midas)
                 if nL:
                     labels[:, 1] = 1 - labels[:, 1]
 
@@ -263,6 +281,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             ud_flip = False
             if ud_flip and random.random() < 0.5:
                 img = np.flipud(img)
+                midas = np.flipud(midas)
                 if nL:
                     labels[:, 2] = 1 - labels[:, 2]
 
@@ -274,14 +293,14 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
         img = np.ascontiguousarray(img)
 
-        return torch.from_numpy(img), labels_out, self.img_files[index], shapes
+        return torch.from_numpy(img), labels_out, self.img_files[index], shapes, torch.from_numpy(midas.copy())
 
     @staticmethod
     def collate_fn(batch):
-        img, label, path, shapes = zip(*batch)  # transposed
+        img, label, path, shapes, midas = zip(*batch)  # transposed
         for i, l in enumerate(label):
             l[:, 0] = i  # add target image index for build_targets()
-        return torch.stack(img, 0), torch.cat(label, 0), path, shapes
+        return torch.stack(img, 0), torch.cat(label, 0), path, shapes, torch.stack(midas, 0)
 
 
 def load_image(self, index):
@@ -299,6 +318,25 @@ def load_image(self, index):
         return img, (h0, w0), img.shape[:2]  # img, hw_original, hw_resized
     else:
         return self.imgs[index], self.img_hw0[index], self.img_hw[index]  # img, hw_original, hw_resized
+
+# ToDo Smita: merge load_image and load_midas
+def load_midas(self, index):
+    # ToDo Smita: change this
+    # loads 1 image from dataset, returns img, original hw, resized hw
+    img = self.midas[index]
+    if img is None:  # not cached
+        img_path = self.midas_files[index]
+        img = cv2.imread(img_path)  # BGR
+        assert img is not None, 'Image Not Found ' + img_path
+        h0, w0 = img.shape[:2]  # orig hw
+        r = self.img_size / max(h0, w0)  # resize image to img_size
+        if r < 1 or (self.augment and r != 1):  # always resize down, only resize up if training with augmentation
+            interp = cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR
+            img = cv2.resize(img, (int(w0 * r), int(h0 * r)), interpolation=interp)
+        return img, (h0, w0), img.shape[:2]  # img, hw_original, hw_resized
+    else:
+        return self.midas[index], self.img_hw0[index], self.img_hw[index]  # img, hw_original, hw_resized
+
 
 
 def augment_hsv(img, hgain=0.5, sgain=0.5, vgain=0.5):
@@ -323,10 +361,12 @@ def load_mosaic(self, index):
     for i, index in enumerate(indices):
         # Load image
         img, _, (h, w) = load_image(self, index)
+        midas, _, (m_h, m_w) = load_midas(self, index)
 
         # place img in img4
         if i == 0:  # top left
             img4 = np.full((s * 2, s * 2, img.shape[2]), 114, dtype=np.uint8)  # base image with 4 tiles
+            midas4 = np.full((s * 2, s * 2, img.shape[2]), 114, dtype=np.uint8)  # base image with 4 tiles
             x1a, y1a, x2a, y2a = max(xc - w, 0), max(yc - h, 0), xc, yc  # xmin, ymin, xmax, ymax (large image)
             x1b, y1b, x2b, y2b = w - (x2a - x1a), h - (y2a - y1a), w, h  # xmin, ymin, xmax, ymax (small image)
         elif i == 1:  # top right
@@ -340,6 +380,7 @@ def load_mosaic(self, index):
             x1b, y1b, x2b, y2b = 0, 0, min(w, x2a - x1a), min(y2a - y1a, h)
 
         img4[y1a:y2a, x1a:x2a] = img[y1b:y2b, x1b:x2b]  # img4[ymin:ymax, xmin:xmax]
+        midas4[y1a:y2a, x1a:x2a] = midas[y1b:y2b, x1b:x2b]  # img4[ymin:ymax, xmin:xmax]
         padw = x1a - x1b
         padh = y1a - y1b
 
@@ -370,18 +411,18 @@ def load_mosaic(self, index):
 
     # Augment
     # img4 = img4[s // 2: int(s * 1.5), s // 2:int(s * 1.5)]  # center crop (WARNING, requires box pruning)
-    img4, labels4 = random_affine(img4, labels4,
+    img4, labels4, midas4 = random_affine(img4, midas4, labels4,
                                   degrees=self.hyp['degrees'] * 1,
                                   translate=self.hyp['translate'] * 1,
                                   scale=self.hyp['scale'] * 1,
                                   shear=self.hyp['shear'] * 1,
                                   border=-s // 2)  # border to remove
 
-    return img4, labels4
+    return img4, labels4, midas4
 
 
 
-def letterbox(img, new_shape=(416, 416), color=(114, 114, 114), auto=True, scaleFill=False, scaleup=True):
+def letterbox(img, midas, new_shape=(416, 416), color=(114, 114, 114), auto=True, scaleFill=False, scaleup=True):
     # Resize image to a 32-pixel-multiple rectangle https://github.com/ultralytics/yolov3/issues/232
     shape = img.shape[:2]  # current shape [height, width]
     if isinstance(new_shape, int):
@@ -408,13 +449,15 @@ def letterbox(img, new_shape=(416, 416), color=(114, 114, 114), auto=True, scale
 
     if shape[::-1] != new_unpad:  # resize
         img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
+        # midas = cv2.resize(midas, new_unpad, interpolation=cv2.INTER_LINEAR) # ToDo Smita: check sizes
     top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
     left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
     img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
-    return img, ratio, (dw, dh)
+    midas = cv2.copyMakeBorder(midas, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
+    return img, ratio, (dw, dh), midas
 
 
-def random_affine(img, targets=(), degrees=10, translate=.1, scale=.1, shear=10, border=0):
+def random_affine(img, midas, targets=(), degrees=10, translate=.1, scale=.1, shear=10, border=0):
     # torchvision.transforms.RandomAffine(degrees=(-10, 10), translate=(.1, .1), scale=(.9, 1.1), shear=(-10, 10))
     # https://medium.com/uruvideo/dataset-augmentation-with-random-homographies-a8f4b44830d4
 
@@ -444,6 +487,7 @@ def random_affine(img, targets=(), degrees=10, translate=.1, scale=.1, shear=10,
     M = S @ T @ R  # ORDER IS IMPORTANT HERE!!
     if (border != 0) or (M != np.eye(3)).any():  # image changed
         img = cv2.warpAffine(img, M[:2], dsize=(width, height), flags=cv2.INTER_LINEAR, borderValue=(114, 114, 114))
+        midas = cv2.warpAffine(midas, M[:2], dsize=(width, height), flags=cv2.INTER_LINEAR, borderValue=(114, 114, 114))
 
     # Transform label coordinates
     n = len(targets)
@@ -480,7 +524,7 @@ def random_affine(img, targets=(), degrees=10, translate=.1, scale=.1, shear=10,
         targets = targets[i]
         targets[:, 1:5] = xy[i]
 
-    return img, targets
+    return img, targets, midas
 
 
 def create_folder(path='./new_folder'):

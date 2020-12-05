@@ -172,7 +172,9 @@ def train():
             with open(results_file, 'w') as file:
                 file.write(chkpt['training_results'])  # write results.txt
 
-        start_epoch = chkpt['epoch'] + 1
+        # ToDO Smita: Decide on this...
+        # start_epoch = chkpt['epoch'] + 1
+        start_epoch = 0
         del chkpt
 
 
@@ -272,10 +274,11 @@ def train():
         mloss = torch.zeros(4).to(device)  # mean losses
         print(('\n' + '%10s' * 8) % ('Epoch', 'gpu_mem', 'GIoU', 'obj', 'cls', 'total', 'targets', 'img_size'))
         pbar = tqdm(enumerate(dataloader), total=nb)  # progress bar
-        for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
+        for i, (imgs, targets, paths, _, midas_targets) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device).float() / 255.0  # uint8 to float32, 0 - 255 to 0.0 - 1.0
             targets = targets.to(device)
+            midas_targets = midas_targets.to(device)
 
             # Burn-in
             if ni <= n_burn * 2:
@@ -302,7 +305,7 @@ def train():
             pred = model(imgs)
 
             # Compute loss
-            # loss, loss_items = compute_loss(pred[1], targets, model)
+            # loss, loss_items = compute_loss(pred, targets, model)
             loss, loss_items = compute_loss(pred[1], targets, model)
             if not torch.isfinite(loss):
                 print('WARNING: non-finite loss, ending training ', loss_items)

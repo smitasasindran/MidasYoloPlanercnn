@@ -83,9 +83,10 @@ def test(cfg,
     p, r, f1, mp, mr, map, mf1, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
     loss = torch.zeros(3, device=device)
     jdict, stats, ap, ap_class = [], [], [], []
-    for batch_i, (imgs, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
+    for batch_i, (imgs, targets, paths, shapes, midas) in enumerate(tqdm(dataloader, desc=s)):
         imgs = imgs.to(device).float() / 255.0  # uint8 to float32, 0 - 255 to 0.0 - 1.0
         targets = targets.to(device)
+        midas = midas.to(device)
         nb, _, height, width = imgs.shape  # batch size, channels, height, width
         whwh = torch.Tensor([width, height, width, height]).to(device)
 
@@ -105,6 +106,7 @@ def test(cfg,
             # Compute loss
             if hasattr(model, 'hyp'):  # if model has loss hyperparameters
                 loss += compute_loss(train_out, targets, model)[1][:3]  # GIoU, obj, cls
+                # loss += compute_loss(train_out[1], targets, model)[1][:3]  # GIoU, obj, cls
 
             # Run NMS
             t = torch_utils.time_synchronized()

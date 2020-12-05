@@ -107,7 +107,7 @@ class MidasYoloNet(BaseModel):
         Returns:
             tensor: depth
         """
-        print("Input size: ", x.shape)
+        # print("Input size: ", x.shape)
         layer_1 = self.pretrained.layer1(x)
         layer_2 = self.pretrained.layer2(layer_1)
         layer_3 = self.pretrained.layer3(layer_2)
@@ -162,8 +162,14 @@ class MidasYoloNet(BaseModel):
 
         # ToDo: Send out Midas output too
         # return midas_output
-        return midas_output, yolo_decoder
+        # return midas_output, yolo_decoder
         # return yolo_decoder
+
+        # ToDo Smita: Fix this in test....
+        if self.training:
+            return midas_output, yolo_decoder
+        else:
+            return yolo_decoder
 
     def freeze_encoder(self):
         # Function to set Midas encoder layers to required_grad=False

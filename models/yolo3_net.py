@@ -286,12 +286,24 @@ class Darknet(nn.Module):
             # out.append(x if self.routs[i] else [])
             out.append(x if i in self.routs else [])
 
+        # print("YoloDecoder in training: ", str(self.training))
         if self.training:  # train
+            # print("In yolod training: size=", len(yolo_out))
+            # print("In yolod: 0=", yolo_out[0].shape)
+            # print("In yolod: 1=", yolo_out[1].shape)
+            # print("In yolod: 2=", yolo_out[2].shape)
             return yolo_out
 
         else:  # inference or test
             x, p = zip(*yolo_out)  # inference output, training output
+            # print("In yolod test: before x=", len(x))
             x = torch.cat(x, 1)  # cat yolo outputs
+            # print("In yolod test: after x=", x.shape)
+            # print("In yolod test: p=", len(p))
+            # print("In yolod test: p0=", p[0].shape)
+            # print("In yolod test: p1=", p[1].shape)
+            # print("In yolod test: p2=", p[2].shape)
+
             return x, p
 
 
