@@ -70,7 +70,7 @@ def create_modules(module_defs, img_size):
 
     # ToDo Smita: Make this configurable?
     # output_filters = [3]  # input channels
-    output_filters = [2048]  # input channels from
+    output_filters = [2048]  # input channels from encoder
 
     module_list = nn.ModuleList()
     routs = []  # list of layers which rout to deeper layers
@@ -143,12 +143,12 @@ def create_modules(module_defs, img_size):
             encoder_inps = 256 # Pass it as features parameter
             filters = sum([encoder_inps if l > 0 else output_filters[l] for l in layers])
             # filters = sum([output_filters[l + 1 if l > 0 else l] for l in layers])
-            print("In routes check 1: i=", i)
-            print("In routes check 2: layers=", layers)
-            print("In routes check 3: filters=", filters)
+            # print("In routes check 1: i=", i)
+            # print("In routes check 2: layers=", layers)
+            # print("In routes check 3: filters=", filters)
 
             routs.extend([i + l if l < 0 else l for l in layers])
-            print("In routes check 4: final routes=", routs)
+            # print("In routes check 4: final routes=", routs)
             modules = FeatureConcat(layers=layers)
 
         elif mdef['type'] == 'shortcut':  # nn.Sequential() placeholder for 'shortcut' layer
@@ -193,7 +193,7 @@ def create_modules(module_defs, img_size):
     # ToDo Smita: Changed routs_binary to dict, since layers are not present
     # routs_binary = [False] * (i + 1)
     routs_binary = {}
-    print("Routes=", routs)
+    # print("Routes=", routs)
     # print("Routs_binary=", routs_binary)
     for i in routs:
         routs_binary[i] = True

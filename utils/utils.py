@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import cv2
 from pathlib import Path
 from . import torch_utils
-from . import utils
+from . import yolo_utils
 import glob
 import os
 
@@ -74,6 +74,21 @@ def fitness(x):
     return (x[:, :4] * w).sum(1)
 
 
+# Plotting functions ---------------------------------------------------------------------------------------------------
+def plot_one_box(x, img, color=None, label=None, line_thickness=None):
+    # Plots one bounding box on image img
+    tl = line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1  # line/font thickness
+    color = color or [random.randint(0, 255) for _ in range(3)]
+    c1, c2 = (int(x[0]), int(x[1])), (int(x[2]), int(x[3]))
+    cv2.rectangle(img, c1, c2, color, thickness=tl)
+    if label:
+        tf = max(tl - 1, 1)  # font thickness
+        t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
+        c2 = c1[0] + t_size[0], c1[1] - t_size[1] - 3
+        cv2.rectangle(img, c1, c2, color, -1)  # filled
+        cv2.putText(img, label, (c1[0], c1[1] - 2), 0, tl / 3, [225, 255, 255], thickness=tf, lineType=cv2.LINE_AA)
+
+
 def plot_images(imgs, targets, paths=None, fname='images.png'):
     # Plots training images overlaid with targets
     imgs = imgs.cpu().numpy()
@@ -86,7 +101,7 @@ def plot_images(imgs, targets, paths=None, fname='images.png'):
     ns = np.ceil(bs ** 0.5)  # number of subplots
 
     for i in range(bs):
-        boxes = utils.xywh2xyxy(targets[targets[:, 0] == i, 2:6]).T
+        boxes = yolo_utils.xywh2xyxy(targets[targets[:, 0] == i, 2:6]).T
         boxes[[0, 2]] *= w
         boxes[[1, 3]] *= h
         plt.subplot(ns, ns, i + 1).imshow(imgs[i].transpose(1, 2, 0))
@@ -145,25 +160,6 @@ def coco80_to_coco91_class():  # converts 80-index (val2014) to 91-index (paper)
     return x
 
 
-def xyxy2xywh(x):
-    # Transform box coordinates from [x1, y1, x2, y2] (where xy1=top-left, xy2=bottom-right) to [x, y, w, h]
-    y = torch.zeros_like(x) if isinstance(x, torch.Tensor) else np.zeros_like(x)
-    y[:, 0] = (x[:, 0] + x[:, 2]) / 2  # x center
-    y[:, 1] = (x[:, 1] + x[:, 3]) / 2  # y center
-    y[:, 2] = x[:, 2] - x[:, 0]  # width
-    y[:, 3] = x[:, 3] - x[:, 1]  # height
-    return y
-
-
-def xywh2xyxy(x):
-    # Transform box coordinates from [x, y, w, h] to [x1, y1, x2, y2] (where xy1=top-left, xy2=bottom-right)
-    y = torch.zeros_like(x) if isinstance(x, torch.Tensor) else np.zeros_like(x)
-    y[:, 0] = x[:, 0] - x[:, 2] / 2  # top left x
-    y[:, 1] = x[:, 1] - x[:, 3] / 2  # top left y
-    y[:, 2] = x[:, 0] + x[:, 2] / 2  # bottom right x
-    y[:, 3] = x[:, 1] + x[:, 3] / 2  # bottom right y
-    return y
-
 def create_backbone(f='weights/last.pt'):  # from utils.utils import *; create_backbone()
     # create a backbone from a *.pt file
     x = torch.load(f, map_location=torch.device('cpu'))
@@ -176,3 +172,29 @@ def create_backbone(f='weights/last.pt'):  # from utils.utils import *; create_b
         except:
             pass
     torch.save(x, 'weights/backbone.pt')
+
+def strip_optimizer(f='weights/last.pt'):  # from utils.utils import *; strip_optimizer()
+    # Strip optimizer from *.pt files for lighter files (reduced by 2/3 size)
+    x = torch.load(f, map_location=torch.device('cpu'))
+    x['optimizer'] = None
+    torch.save(x, f)
+
+
+def print_mutation(hyp, results, bucket=''):
+    # Print mutation results to evolve.txt (for use with train.py --evolve)
+    a = '%10s' * len(hyp) % tuple(hyp.keys())  # hyperparam keys
+    b = '%10.3g' * len(hyp) % tuple(hyp.values())  # hyperparam values
+    c = '%10.4g' * len(results) % results  # results (P, R, mAP, F1, test_loss)
+    print('\n%s\n%s\nEvolved fitness: %s\n' % (a, b, c))
+
+    if bucket:
+        os.system('gsutil cp gs://%s/evolve.txt .' % bucket)  # download evolve.txt
+
+    with open('evolve.txt', 'a') as f:  # append result
+        f.write(c + b + '\n')
+    x = np.unique(np.loadtxt('evolve.txt', ndmin=2), axis=0)  # load unique rows
+    np.savetxt('evolve.txt', x[np.argsort(-fitness(x))], '%10.3g')  # save sort by fitness
+
+    if bucket:
+        os.system('gsutil cp evolve.txt gs://%s' % bucket)  # upload evolve.txt
+

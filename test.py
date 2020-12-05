@@ -7,11 +7,11 @@ from torch.utils.data import DataLoader
 # from utils.datasets import *
 from utils.utils import *
 import torch.nn as nn
-from  utils.yolo_utils import parse_data_cfg, compute_loss, non_max_suppression, scale_coords, clip_coords
+from  utils.yolo_utils import *
 import time
 from models.midasyolo3 import MidasYoloNet
 from dataloader.dataloader import LoadImagesAndLabels
-
+from tqdm import tqdm
 
 def test(cfg,
          data,
@@ -79,7 +79,7 @@ def test(cfg,
     model.eval()
     _ = model(torch.zeros((1, 3, img_size, img_size), device=device)) if device.type != 'cpu' else None  # run once
     coco91class = coco80_to_coco91_class()
-    s = ('%20s' + '%10s' * 6) % ('Class', 'Images', 'Targets', 'P', 'R', 'mAP@0.5', 'F1')
+    s = ('%20s' + '%10s' * 6) % ('Class', 'Images', 'Targets', 'P', 'R', 'mAP@0.5', 'F1') # ToDo Smita: check this
     p, r, f1, mp, mr, map, mf1, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
     loss = torch.zeros(3, device=device)
     jdict, stats, ap, ap_class = [], [], [], []
@@ -98,7 +98,8 @@ def test(cfg,
         with torch.no_grad():
             # Run model
             t = torch_utils.time_synchronized()
-            inf_out, train_out = model(imgs, augment=augment)  # inference and training outputs
+            # inf_out, train_out = model(imgs, augment=augment)  # inference and training outputs
+            inf_out, train_out = model(imgs)  # ToDo Smita: Decide on augment. inference and training outputs
             t0 += torch_utils.time_synchronized() - t
 
             # Compute loss

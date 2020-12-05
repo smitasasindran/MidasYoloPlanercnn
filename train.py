@@ -12,15 +12,15 @@ import torch.optim.lr_scheduler as lr_scheduler
 from tqdm import tqdm
 import time
 import cv2
+import test
+import torch.nn.functional as F
 
 # import test  # import test.py to get mAP after each epoch
 # from models import *
 # from utils.datasets import *
-# from utils.utils import *
+from utils.utils import *
 from models.midasyolo3 import MidasYoloNet
 from utils.yolo_utils import parse_data_cfg
-# from utils.utils import * # ToDo Put this back, settings are present in utils
-from utils.utils import init_seeds, labels_to_class_weights, labels_to_image_weights, plot_images, plot_results
 from dataloader.dataloader import LoadImagesAndLabels
 from utils import torch_utils
 from utils.yolo_utils import compute_loss, print_model_biases, fitness
@@ -70,6 +70,11 @@ if hyp['fl_gamma']:
     print('Using FocalLoss(gamma=%g)' % hyp['fl_gamma'])
 
 
+def print_model(model):
+    for name, param in model.named_parameters():
+        print(name, ":", param.requires_grad)
+
+
 def train():
     cfg = opt.cfg
     data = opt.data
@@ -107,9 +112,11 @@ def train():
     # ToDO Smita Change
     # model = Darknet(cfg).to(device)
     model = MidasYoloNet(path='model-f6b98070.pt', yolo_cfg=cfg).to(device)
+    # print(model)
+    # print("\n\n\n\n=======================================")
+    # print_model(model)
 
     # Optimizer
-    # ToDo Smita: Add back
     pg0, pg1, pg2 = [], [], []  # optimizer parameter groups
     for k, v in dict(model.named_parameters()).items():
         if '.bias' in k:
@@ -125,42 +132,48 @@ def train():
         # optimizer = AdaBound(pg0, lr=hyp['lr0'], final_lr=0.1)
     else:
         optimizer = optim.SGD(pg0, lr=hyp['lr0'], momentum=hyp['momentum'], nesterov=True)
-    # ToDo Smita: Add back
-    # optimizer.add_param_group({'params': pg1, 'weight_decay': hyp['weight_decay']})  # add pg1 with weight_decay
-    # optimizer.add_param_group({'params': pg2})  # add pg2 (biases)
-    # del pg0, pg1, pg2
+    optimizer.add_param_group({'params': pg1, 'weight_decay': hyp['weight_decay']})  # add pg1 with weight_decay
+    optimizer.add_param_group({'params': pg2})  # add pg2 (biases)
+    del pg0, pg1, pg2
 
     start_epoch = 0
     best_fitness = 0.0
 
-
     # ToDo Smita: Change this, uncomment all
-    # attempt_download(weights)
-    # if weights.endswith('.pt'):  # pytorch format
-    #     # possible weights are '*.pt', 'yolov3-spp.pt', 'yolov3-tiny.pt' etc.
-    #     chkpt = torch.load(weights, map_location=device)
-    #
-    #     # load model
-    #     try:
-    #         chkpt['model'] = {k: v for k, v in chkpt['model'].items() if model.state_dict()[k].numel() == v.numel()}
-    #         model.load_state_dict(chkpt['model'], strict=False)
-    #     except KeyError as e:
-    #         s = "%s is not compatible with %s. Specify --weights '' or specify a --cfg compatible with %s. " \
-    #             "See https://github.com/ultralytics/yolov3/issues/657" % (opt.weights, opt.cfg, opt.weights)
-    #         raise KeyError(s) from e
-    #
-    #     # load optimizer
-    #     if chkpt['optimizer'] is not None:
-    #         optimizer.load_state_dict(chkpt['optimizer'])
-    #         best_fitness = chkpt['best_fitness']
-    #
-    #     # load results
-    #     if chkpt.get('training_results') is not None:
-    #         with open(results_file, 'w') as file:
-    #             file.write(chkpt['training_results'])  # write results.txt
-    #
-    #     start_epoch = chkpt['epoch'] + 1
-    #     del chkpt
+
+    print("In initweights always: ", str(opt.initWeights))
+    # Load either initial weights of each branch, or last/best weights of full model
+    if opt.initWeights:
+        # attempt_download(weights)
+        model.load_yolo_weights(opt.init_yolo_weights, device)
+        model.load_midas_weights(opt.init_midas_weights)
+        model.load_planercnn_weights(opt.init_planercnn_weights)
+
+    elif weights.endswith('.pt'):  # pytorch format
+        # possible weights are '*.pt', 'yolov3-spp.pt', 'yolov3-tiny.pt' etc.
+        chkpt = torch.load(weights, map_location=device)
+
+        # load model
+        try:
+            chkpt['model'] = {k: v for k, v in chkpt['model'].items() if model.state_dict()[k].numel() == v.numel()}
+            model.load_state_dict(chkpt['model'], strict=False)
+        except KeyError as e:
+            s = "%s is not compatible with %s. Specify --weights '' or specify a --cfg compatible with %s. " \
+                "See https://github.com/ultralytics/yolov3/issues/657" % (opt.weights, opt.cfg, opt.weights)
+            raise KeyError(s) from e
+
+        # load optimizer
+        if chkpt['optimizer'] is not None:
+            optimizer.load_state_dict(chkpt['optimizer'])
+            best_fitness = chkpt['best_fitness']
+
+        # load results
+        if chkpt.get('training_results') is not None:
+            with open(results_file, 'w') as file:
+                file.write(chkpt['training_results'])  # write results.txt
+
+        start_epoch = chkpt['epoch'] + 1
+        del chkpt
 
 
 
@@ -289,7 +302,8 @@ def train():
             pred = model(imgs)
 
             # Compute loss
-            loss, loss_items = compute_loss(pred, targets, model)
+            # loss, loss_items = compute_loss(pred[1], targets, model)
+            loss, loss_items = compute_loss(pred[1], targets, model)
             if not torch.isfinite(loss):
                 print('WARNING: non-finite loss, ending training ', loss_items)
                 return results
@@ -431,7 +445,15 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='', help='device id (i.e. 0 or 0,1 or cpu)')
     parser.add_argument('--adam', action='store_true', help='use adam optimizer')
     parser.add_argument('--single-cls', action='store_true', help='train as single-class dataset')
+    parser.add_argument('--init-yolo-weights', type=str, default='weights/yolov3-spp-ultralytics.pt', help='initial Yolo weights') #weights/yolov3-spp-ultralytics.pt
+    parser.add_argument('--init-midas-weights', type=str, default='weights/model-f6b98070.pt', help='initial Midas weights') #weights/model-f6b98070.pt
+    parser.add_argument('--init-planercnn-weights', type=str, default='', help='initial Planercnn weights') # ToDo Smita change
+    parser.add_argument('--freeze-encoder', action='store_true', help='Freeze the encoder layer during training')
+    parser.add_argument('--load-init', action='store_true', help='Load initial weights for midas, yolo and planercnn')
+
     opt = parser.parse_args()
+    # Initial weights - Either pick defaults, or pass all three initial weights. if initial weights are specified, --weights will not be honoured
+    opt.initWeights = opt.load_init or (opt.init_yolo_weights and opt.init_midas_weights and opt.init_planercnn_weights)
     opt.weights = last if opt.resume else opt.weights
     print(opt)
     opt.img_size.extend([opt.img_size[-1]] * (3 - len(opt.img_size)))  # extend to 3 sizes (min, max, test)
