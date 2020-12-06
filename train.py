@@ -20,10 +20,10 @@ import torch.nn.functional as F
 # from utils.datasets import *
 from utils.utils import *
 from models.midasyolo3 import MidasYoloNet
-from utils.yolo_utils import parse_data_cfg
 from dataloader.dataloader import LoadImagesAndLabels
 from utils import torch_utils
-from utils.yolo_utils import compute_loss, print_model_biases, fitness
+from utils.yolo_utils import parse_data_cfg, compute_loss, print_model_biases, fitness
+from utils.midas_utils import ssim, SSIM
 
 mixed_precision = True
 try:  # Mixed precision training https://github.com/NVIDIA/apex
@@ -36,6 +36,7 @@ wdir = 'weights' + os.sep  # weights dir
 last = wdir + 'last.pt'
 best = wdir + 'best.pt'
 results_file = 'results.txt'
+model_branches = ["encoder", "yolo", "midas", "planercnn"]
 
 # Hyperparameters https://github.com/ultralytics/yolov3/issues/310
 
@@ -138,8 +139,7 @@ def train():
 
     start_epoch = 0
     best_fitness = 0.0
-
-    # ToDo Smita: Change this, uncomment all
+    last_save = 0
 
     print("In initweights always: ", str(opt.initWeights))
     # Load either initial weights of each branch, or last/best weights of full model
@@ -182,10 +182,19 @@ def train():
     #     # possible weights are '*.weights', 'yolov3-tiny.conv.15',  'darknet53.conv.74' etc.
     #     load_darknet_weights(model, weights)
 
-    # ToDo Freeze layers as per command line args
+    # Freeze layers as per command line args
     print("Freeeezing layers:")
-    model.freeze_layers(["encoder", "midas"])
+
+    layers_to_freeze  = [b for b in model_branches if b not in run_branches]
+    print("Layers to run for: ", run_branches)
+    print("Layers to be frozen:", layers_to_freeze)
+    # model.freeze_layers(["encoder", "yolo"])
+    model.freeze_layers(layers_to_freeze)
     model.info(verbose=True)
+    lambda_yolo = int("yolo" in run_branches)
+    lambda_midas = int("midas" in run_branches)
+    lambda_planarcnn = int("planarcnn" in run_branches)
+    print("Coefficents for yolo, midas, planarcnn:" + str(lambda_yolo), str(lambda_midas), str(lambda_planarcnn))
 
     # Mixed precision training https://github.com/NVIDIA/apex
     if mixed_precision:
@@ -262,6 +271,7 @@ def train():
     # torch.autograd.set_detect_anomaly(True)
     results = (0, 0, 0, 0, 0, 0, 0)  # 'P', 'R', 'mAP', 'F1', 'val GIoU', 'val Objectness', 'val Classification'
     t0 = time.time()
+
     print('Image sizes %g - %g train, %g test' % (imgsz_min, imgsz_max, imgsz_test))
     print('Using %g dataloader workers' % nw)
     print('Starting training for %g epochs...' % epochs)
@@ -275,13 +285,14 @@ def train():
             dataset.indices = random.choices(range(dataset.n), weights=image_weights, k=dataset.n)  # rand weighted idx
 
         mloss = torch.zeros(4).to(device)  # mean losses
+        midas_loss = torch.zeros(1).to(device) # loss for midas
         print(('\n' + '%10s' * 8) % ('Epoch', 'gpu_mem', 'GIoU', 'obj', 'cls', 'total', 'targets', 'img_size'))
         pbar = tqdm(enumerate(dataloader), total=nb)  # progress bar
         for i, (imgs, targets, paths, _, midas_targets) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device).float() / 255.0  # uint8 to float32, 0 - 255 to 0.0 - 1.0
             targets = targets.to(device)
-            midas_targets = midas_targets.to(device)
+            midas_targets = midas_targets.to(device).float() / 255.0
 
             # Burn-in
             if ni <= n_burn * 2:
@@ -309,7 +320,20 @@ def train():
 
             # Compute loss
             # loss, loss_items = compute_loss(pred, targets, model)
-            loss, loss_items = compute_loss(pred[1], targets, model)
+            yolo_loss, loss_items = compute_loss(pred[1], targets, model)
+            print("loss=", yolo_loss)
+            print("loss items=", loss_items)
+            print(pred[0])
+            ssim_fn = SSIM(window_size = 11)
+            midas_targets = midas_targets.unsqueeze(1)
+            midas_pred = pred[0].unsqueeze(1)
+            midas_ssim = ssim_fn(midas_pred, midas_targets)
+            midas_loss = 1 - midas_ssim # ssim function gives higher similarity as close to 1.
+            print("midas ssim loss=", midas_loss, ", ssim=", midas_ssim)
+
+            # ToDo Smita: Pass arguments properly
+            loss = lambda_yolo * yolo_loss + lambda_midas * midas_loss # + lambda_planar * planar_loss
+
             if not torch.isfinite(loss):
                 print('WARNING: non-finite loss, ending training ', loss_items)
                 return results
@@ -383,7 +407,10 @@ def train():
             best_fitness = fi
 
         # Save training results
-        save = (not opt.nosave) or (final_epoch and not opt.evolve)
+        # save = (not opt.nosave) or (final_epoch and not opt.evolve)
+        # print("Save or not:", str(save), ", opt.nosave=", str(opt.nosave),", final_epoch=", str(final_epoch), ", evolve=", str(opt.evolve))
+        # ToDo Smita: Fix this
+        save = True
         if save:
             with open(results_file, 'r') as f:
                 # Create checkpoint
@@ -398,8 +425,17 @@ def train():
             # torch.save(chkpt, last)
 
             # Save best checkpoint
+            print("Saving best weights:", str(best_fitness), ", fi=", str(fi), ", final_epoch=", str(final_epoch))
             if (best_fitness == fi) and not final_epoch:
                 torch.save(chkpt, best)
+                print("Saving best weights AT EPOCH:" + str(epoch))
+                if (epoch - last_save) > 10:
+                    torch.save(chkpt, '/content/gdrive/My Drive/eva5/ass13/custom/weights/best15.pt')
+                    print("Saving best weights to gdrive for epoch:", str(last_save))
+                    last_save = epoch
+
+            if final_epoch:
+                torch.save(chkpt, last)
 
             # Save backup every 10 epochs (optional)
             # if epoch > 0 and epoch % 10 == 0:
@@ -457,6 +493,7 @@ if __name__ == '__main__':
     parser.add_argument('--init-planercnn-weights', type=str, default='', help='initial Planercnn weights') # ToDo Smita change
     parser.add_argument('--freeze-encoder', action='store_true', help='Freeze the encoder layer during training')
     parser.add_argument('--load-init', action='store_true', help='Load initial weights for midas, yolo and planercnn')
+    parser.add_argument('--run-branches', default='yolo', help='Pick which branches to run. Comma separated format')
 
     opt = parser.parse_args()
     # Initial weights - Either pick defaults, or pass all three initial weights. if initial weights are specified, --weights will not be honoured
@@ -467,6 +504,8 @@ if __name__ == '__main__':
     device = torch_utils.select_device(opt.device, apex=mixed_precision, batch_size=opt.batch_size)
     if device.type == 'cpu':
         mixed_precision = False
+
+    run_branches = [s.lower().strip() for s in opt.run_branches.split(",")]
 
     # scale hyp['obj'] by img_size (evolved at 320)
     # hyp['obj'] *= opt.img_size[0] / 320.

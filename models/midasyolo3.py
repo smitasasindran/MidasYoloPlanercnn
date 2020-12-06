@@ -164,14 +164,8 @@ class MidasYoloNet(BaseModel):
 
         # ToDo: Send out Midas output too
         # return midas_output
-        # return midas_output, yolo_decoder
+        return midas_output, yolo_decoder
         # return yolo_decoder
-
-        # ToDo Smita: Fix this in test....
-        if self.training:
-            return midas_output, yolo_decoder
-        else:
-            return yolo_decoder
 
     # def set_trainable(self, layer_regex, model=None, indent=0, verbose=1):
     #     """Sets model layers as trainable if their names match

@@ -12,6 +12,7 @@ import time
 from models.midasyolo3 import MidasYoloNet
 from dataloader.dataloader import LoadImagesAndLabels
 from tqdm import tqdm
+from utils.midas_utils import SSIM
 
 def test(cfg,
          data,
@@ -82,11 +83,12 @@ def test(cfg,
     s = ('%20s' + '%10s' * 6) % ('Class', 'Images', 'Targets', 'P', 'R', 'mAP@0.5', 'F1') # ToDo Smita: check this
     p, r, f1, mp, mr, map, mf1, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
     loss = torch.zeros(3, device=device)
+    midas_loss = torch.zeros(3, device=device)
     jdict, stats, ap, ap_class = [], [], [], []
-    for batch_i, (imgs, targets, paths, shapes, midas) in enumerate(tqdm(dataloader, desc=s)):
+    for batch_i, (imgs, targets, paths, shapes, midas_targets) in enumerate(tqdm(dataloader, desc=s)):
         imgs = imgs.to(device).float() / 255.0  # uint8 to float32, 0 - 255 to 0.0 - 1.0
         targets = targets.to(device)
-        midas = midas.to(device)
+        midas_targets = midas_targets.to(device).float() / 255.0
         nb, _, height, width = imgs.shape  # batch size, channels, height, width
         whwh = torch.Tensor([width, height, width, height]).to(device)
 
@@ -100,13 +102,19 @@ def test(cfg,
             # Run model
             t = torch_utils.time_synchronized()
             # inf_out, train_out = model(imgs, augment=augment)  # inference and training outputs
-            inf_out, train_out = model(imgs)  # ToDo Smita: Decide on augment. inference and training outputs
+            # midas_out, inf_out, train_out = model(imgs)  # ToDo Smita: Decide on augment. inference and training outputs
+            midas_out, yolo_out = model(imgs)  # ToDo Smita: Decide on augment. inference and training outputs
+            inf_out, train_out = yolo_out
             t0 += torch_utils.time_synchronized() - t
 
             # Compute loss
+            midas_targets = midas_targets.unsqueeze(1)
+            midas_out  = midas_out.unsqueeze(1)
+            ssim_fn = SSIM(window_size=11)
             if hasattr(model, 'hyp'):  # if model has loss hyperparameters
+                # ToDo Smita: Change this, make it same as training, with lambda param for branches
                 loss += compute_loss(train_out, targets, model)[1][:3]  # GIoU, obj, cls
-                # loss += compute_loss(train_out[1], targets, model)[1][:3]  # GIoU, obj, cls
+                midas_loss += 1 - ssim_fn(midas_out, midas_targets)  # ssim function gives higher similarity as close to 1.
 
             # Run NMS
             t = torch_utils.time_synchronized()

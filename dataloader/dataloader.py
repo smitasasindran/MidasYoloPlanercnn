@@ -292,6 +292,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         # Convert
         img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
         img = np.ascontiguousarray(img)
+        midas = cv2.cvtColor(midas, cv2.COLOR_BGR2GRAY)
 
         return torch.from_numpy(img), labels_out, self.img_files[index], shapes, torch.from_numpy(midas.copy())
 
@@ -333,6 +334,8 @@ def load_midas(self, index):
         if r < 1 or (self.augment and r != 1):  # always resize down, only resize up if training with augmentation
             interp = cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR
             img = cv2.resize(img, (int(w0 * r), int(h0 * r)), interpolation=interp)
+            # img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) # ToDo Smita: Check sizes...
+
         return img, (h0, w0), img.shape[:2]  # img, hw_original, hw_resized
     else:
         return self.midas[index], self.img_hw0[index], self.img_hw[index]  # img, hw_original, hw_resized
