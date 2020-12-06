@@ -10,11 +10,10 @@ class BaseModel(torch.nn.Module):
         """
         parameters = torch.load(path, map_location=torch.device('cpu'))
 
-        print("Load Path is:", path, ", Parameters are:")
+        print("Load Path is:", path)
         if "optimizer" in parameters:
             parameters = parameters["model"]
 
-        # print(parameters.keys())
         self.load_state_dict(parameters, strict=False)
 
 

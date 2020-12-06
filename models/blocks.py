@@ -69,7 +69,6 @@ def create_modules(module_defs, img_size):
     _ = module_defs.pop(0)  # cfg training hyperparams (unused)
 
     # ToDo Smita: Make this configurable?
-    # output_filters = [3]  # input channels
     output_filters = [2048]  # input channels from encoder
 
     module_list = nn.ModuleList()
@@ -92,14 +91,6 @@ def create_modules(module_defs, img_size):
                                                        padding=k // 2 if mdef['pad'] else 0,
                                                        groups=mdef['groups'] if 'groups' in mdef else 1,
                                                        bias=not bn))
-            # else:  # multiple-size conv
-            #     print("AAAAAA IN MIXEDCONV2D - Going once, going twice! AAA") # NEver called
-            #     modules.add_module('MixConv2d', MixConv2d(in_ch=output_filters[-1],
-            #                                               out_ch=filters,
-            #                                               k=k,
-            #                                               stride=stride,
-            #                                               bias=not bn))
-
             if bn:
                 modules.add_module('BatchNorm2d', nn.BatchNorm2d(filters, momentum=0.03, eps=1E-4))
             else:
@@ -108,17 +99,6 @@ def create_modules(module_defs, img_size):
 
             if mdef['activation'] == 'leaky':  # activation study https://github.com/ultralytics/yolov3/issues/441
                 modules.add_module('activation', nn.LeakyReLU(0.1, inplace=True))
-                # modules.add_module('activation', nn.PReLU(num_parameters=1, init=0.10))
-            # elif mdef['activation'] == 'swish':
-            #     modules.add_module('activation', Swish())
-
-        # elif mdef['type'] == 'BatchNorm2d':
-        #     filters = output_filters[-1]
-        #     modules = nn.BatchNorm2d(filters, momentum=0.03, eps=1E-4)
-        #     if i == 0 and filters == 3:  # normalize RGB image
-        #         # imagenet mean and var https://pytorch.org/docs/stable/torchvision/models.html#classification
-        #         modules.running_mean = torch.tensor([0.485, 0.456, 0.406])
-        #         modules.running_var = torch.tensor([0.0524, 0.0502, 0.0506])
 
         elif mdef['type'] == 'maxpool':
             k = mdef['size']  # kernel size
@@ -139,11 +119,10 @@ def create_modules(module_defs, img_size):
 
         elif mdef['type'] == 'route':  # nn.Sequential() placeholder for 'route' layer
             layers = mdef['layers']
-            # ToDo Smita: Hardcoding the channel sizes here.. coming from midas encoder
-            encoder_inps = 256 # Pass it as features parameter
+            # ToDo Smita: Hardcoding the channel sizes here.. coming from midas encoder. Pass it as features parameter
+            encoder_inps = 256
             filters = sum([encoder_inps if l > 0 else output_filters[l] for l in layers])
             # filters = sum([output_filters[l + 1 if l > 0 else l] for l in layers])
-            # print("In routes check 1: i=", i)
             # print("In routes check 2: layers=", layers)
             # print("In routes check 3: filters=", filters)
 
@@ -152,7 +131,7 @@ def create_modules(module_defs, img_size):
             modules = FeatureConcat(layers=layers)
 
         elif mdef['type'] == 'shortcut':  # nn.Sequential() placeholder for 'shortcut' layer
-            layers = mdef['from']
+            # layers = mdef['from']
             filters = output_filters[-1]
             # routs.extend([i + l if l < 0 else l for l in layers])
             # modules = WeightedFeatureFusion(layers=layers, weight='weights_type' in mdef)
@@ -193,8 +172,6 @@ def create_modules(module_defs, img_size):
     # ToDo Smita: Changed routs_binary to dict, since layers are not present
     # routs_binary = [False] * (i + 1)
     routs_binary = {}
-    # print("Routes=", routs)
-    # print("Routs_binary=", routs_binary)
     for i in routs:
         routs_binary[i] = True
     return module_list, routs_binary

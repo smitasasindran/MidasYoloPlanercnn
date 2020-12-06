@@ -16,11 +16,9 @@ class MidasYoloNet(BaseModel):
     """Network for monocular depth estimation.
     """
 
-    # ToDo Smita: Pass Config file
     def __init__(self, path=None, features=256, non_negative=True, yolo_cfg='',
                  augment=False, image_size=None, device='cpu'):
         """Init.
-
         Args:
             path (str, optional): Path to saved model. Defaults to None.
             features (int, optional): Number of features. Defaults to 256.
@@ -48,11 +46,6 @@ class MidasYoloNet(BaseModel):
             nn.Conv2d(32, 1, kernel_size=1, stride=1, padding=0),
             nn.ReLU(True) if non_negative else nn.Identity(),
         )
-
-        # Move this to separate/common load function
-        # if path:
-        #     self.load(path)
-
 
         self.yolo_head = nn.Sequential(
             nn.Conv2d(3, 32, kernel_size=3, stride=2, padding=1, bias=False),  # 208 x 208
@@ -93,9 +86,8 @@ class MidasYoloNet(BaseModel):
         self.yolo_decoder = yolo3_net.Darknet(cfg=yolo_cfg, img_size=image_size)
         # self.yolo_decoder = yolo3_net.YoloDecoder(img_size=image_size, features=features)
 
-        # ToDo Smita: fix this, its a hack
         self.yolo_layers = self.yolo_decoder.yolo_layers
-        # self.module_list = self.yolo_decoder.module_list
+        # self.module_list = self.yolo_decoder.module_list # ToDo Smita: fix this, its a hack
 
         # Add planercnn model. Can directly add, as its backbone is also Resnet101, same as midas
         planercnn_config = Config(None)
@@ -134,19 +126,6 @@ class MidasYoloNet(BaseModel):
         out = self.scratch.output_conv(path_1)
         midas_output = torch.squeeze(out, dim=1)
 
-        # print("layer_1: ", layer_1.shape)
-        # print("layer_2: ", layer_2.shape)
-        # print("layer_3: ", layer_3.shape)
-        # print("layer_4: ", layer_4.shape)
-        # print("layer_1_rn: ", layer_1_rn.shape)
-        # print("layer_2_rn: ", layer_2_rn.shape)
-        # print("layer_3_rn: ", layer_3_rn.shape)
-        # print("layer_4_rn: ", layer_4_rn.shape)
-        # print("path_4: with layer_4_rn ", path_4.shape)
-        # print("path_3: with path_4, layer_3_rn", path_3.shape)
-        # print("path_2: with path_3, layer_2_rn", path_2.shape)
-        # print("path_1: with path_2, layer_1_rn ", path_1.shape)
-
         # Feed to yolo decoder
         # Layer 83 route to e3 => 82/80/78/77, 13x13  -- layer_4_rn
         # Layer 93 route to e2=> 61, 26x26            -- layer_3_rn
@@ -158,31 +137,12 @@ class MidasYoloNet(BaseModel):
         yolo_connect = self.yolo_connect(combined)
         yolo_decoder = self.yolo_decoder(yolo_connect, layer_2_rn, layer_3_rn)
 
-        # print("yolo head:", yolo_head.shape)
-        # print("yolo connect:", yolo_connect.shape)
-        # print("Yolo decoder:", len(yolo_decoder))
-        # print("yolo1: ", yolo_decoder[0].shape)
-        # print("After yolo decoder call")
-        # print("out: ", out.shape)
-        # print("Final Midas output: ", midas_output.shape)
-        #
         # Planercnn decoder takes raw input, and then the three encoder inputs. Called using predict function
-        mode = 'training' if self.training else 'inference'
+        # mode = 'training' if self.training else 'inference'
         # planercnn_out = self.planercnn_decoder.predict(x, mode, encoder_inps=[layer_1_rn, layer_2_rn, layer_3_rn, layer_4_rn])
 
         # ToDo: Send out Planercnn output too
         return midas_output, yolo_decoder
-
-
-    # def set_trainable(self, layer_regex, model=None, indent=0, verbose=1):
-    #     """Sets model layers as trainable if their names match
-    #     the given regular expression.
-    #     """
-    #     for param in self.named_parameters():
-    #         layer_name = param[0]
-    #         trainable = bool(re.fullmatch(layer_regex, layer_name))
-    #         if not trainable:
-    #             param[1].requires_grad = False
 
 
     def freeze_layers(self, keys):
@@ -210,7 +170,6 @@ class MidasYoloNet(BaseModel):
                     param[1].requires_grad = False
 
 
-
     def load_model_weights(self, path):
         pass
 
@@ -231,39 +190,16 @@ class MidasYoloNet(BaseModel):
         yolo_dict = {}
         try:
             model_dict = self.state_dict()
-            # print("In load_yolo_weights -==========")
-            # print("Model dict: ", model_dict.keys())
-            # print("Yolo weight dict ultralytics all=", yolo_state_dict.keys())
             print("Yolo weight dict ultralytics filtered=", yolo_weight_dict.keys())
             for k, v in mappings.items():
-                # print("In loop: k=", k, ", v=", v)
-                # chkpt['model'] = {k: v for k, v in chkpt['model'].items() if model.state_dict()[k].numel() == v.numel()}
-                # model.load_state_dict(chkpt['model'], strict=False)
-                # print("Check condition: model=" + str(model_dict[k].numel()) + ", yolo=" + str(yolo_weight_dict[v].numel()))
                 if (model_dict[k].numel() == yolo_weight_dict[v].numel()):
                     yolo_dict[k] = yolo_weight_dict[v]
-                # else:
-                #     print("In loop: k=", k, ", v=", v)
-                #     print("Check condition: model=" + str(model_dict[k].numel()) + ", yolo=" + str(
-                #         yolo_weight_dict[v].numel()))
-                #     print("Didn't match, ignoring")
 
             model_dict.update(yolo_dict)
             self.load_state_dict(model_dict, strict=False)
-            # model_dict = model.state_dict()
-            # yolo_dict = {}
-            # for k, v in layers_mapping.items():
-            #     for k2, v2 in yolo_weight_dict.items():
-            #         if (v == k2 and model_dict[k].numel() == v2.numel()):
-            #             yolo_dict[k] = v2
-            # model_dict.update(yolo_dict)
-            # model.load_state_dict(model_dict, strict=False)
         except KeyError as e:
             s = "Yolo weights {0} are not compatible.".format(path)
-            # s = "%s is not compatible with %s. Specify --weights '' or specify a --cfg compatible with %s. " \
-            #     "See https://github.com/ultralytics/yolov3/issues/657" % (opt.weights_yolo, opt.cfg, opt.weights_yolo)
             raise KeyError(s) from e
-        # del yolo_weight_dict
 
 
     def info(self, verbose=False):

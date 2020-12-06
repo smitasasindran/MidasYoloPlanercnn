@@ -12,27 +12,22 @@ class Interpolate(nn.Module):
 
     def __init__(self, scale_factor, mode):
         """Init.
-
         Args:
             scale_factor (float): scaling
             mode (str): interpolation mode
         """
         super(Interpolate, self).__init__()
-
         self.interp = nn.functional.interpolate
         self.scale_factor = scale_factor
         self.mode = mode
 
     def forward(self, x):
         """Forward pass.
-
         Args:
             x (tensor): input
-
         Returns:
             tensor: interpolated data
         """
-
         x = self.interp(
             x, scale_factor=self.scale_factor, mode=self.mode, align_corners=False
         )
@@ -43,10 +38,8 @@ class Interpolate(nn.Module):
 class ResidualConvUnit(nn.Module):
     """Residual convolution module.
     """
-
     def __init__(self, features):
         """Init.
-
         Args:
             features (int): number of features
         """
@@ -55,16 +48,13 @@ class ResidualConvUnit(nn.Module):
         self.conv1 = nn.Conv2d(
             features, features, kernel_size=3, stride=1, padding=1, bias=True
         )
-
         self.conv2 = nn.Conv2d(
             features, features, kernel_size=3, stride=1, padding=1, bias=True
         )
-
         self.relu = nn.ReLU(inplace=True)
 
     def forward(self, x):
         """Forward pass.
-
         Args:
             x (tensor): input
 
@@ -85,7 +75,6 @@ class FeatureFusionBlock(nn.Module):
 
     def __init__(self, features):
         """Init.
-
         Args:
             features (int): number of features
         """
@@ -96,7 +85,6 @@ class FeatureFusionBlock(nn.Module):
 
     def forward(self, *xs):
         """Forward pass.
-
         Returns:
             tensor: output
         """

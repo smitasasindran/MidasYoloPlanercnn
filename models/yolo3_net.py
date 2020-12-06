@@ -8,6 +8,7 @@ from models.layers import YOLOLayer, FeatureConcat
 
 ONNX_EXPORT = False
 
+# ToDo: Delete this class, using modified DarkNet below
 class YoloDecoder(nn.Module):
     """
     Yolo3 decoder model - Either use this or Darknet below
@@ -67,7 +68,6 @@ class YoloDecoder(nn.Module):
 
         # Yolo layer
         yolo_index += 1
-        # self.y_113 = YOLOLayer(768, 256, 1)
         self.y_113 = self.get_yolo(nc, yolo_index, img_size)
 
         self.yolo_layers = get_yolo_layers(self)
@@ -247,7 +247,6 @@ class YoloDecoder(nn.Module):
         model_info(self, verbose)
 
 
-
 class Darknet(nn.Module):
     # YOLOv3 object detection model
 
@@ -286,117 +285,14 @@ class Darknet(nn.Module):
             # out.append(x if self.routs[i] else [])
             out.append(x if i in self.routs else [])
 
-        # print("YoloDecoder in training: ", str(self.training))
         if self.training:  # train
-            # print("In yolod training: size=", len(yolo_out))
-            # print("In yolod: 0=", yolo_out[0].shape)
-            # print("In yolod: 1=", yolo_out[1].shape)
-            # print("In yolod: 2=", yolo_out[2].shape)
             return yolo_out
 
         else:  # inference or test
             x, p = zip(*yolo_out)  # inference output, training output
-            # print("In yolod test: before x=", len(x))
             x = torch.cat(x, 1)  # cat yolo outputs
-            # print("In yolod test: after x=", x.shape)
-            # print("In yolod test: p=", len(p))
-            # print("In yolod test: p0=", p[0].shape)
-            # print("In yolod test: p1=", p[1].shape)
-            # print("In yolod test: p2=", p[2].shape)
-
             return x, p
 
-
-    # def forward(self, *xs):
-    #     print("Inside yolo decoder forward")
-    #     # ToDO Smita Change this....
-    #     augment = False
-    #     verbose = False
-    #
-    #     x = xs[0]
-    #     e2 = xs[1] # Replacing input from layer 36
-    #     e3 = xs[2] # Replacing input from layer 61
-    #
-    #     encoder_inps = {36: e2, 61: e3}
-    #
-    #     return self.forward_once(x, encoder_inps=encoder_inps)
-    #     # ToDo Smita: Not considering augment for now
-    #     # if not augment:
-    #     #     return self.forward_once(x, encoder_inps=encoder_inps)
-    #     # else:  # Augment images (inference and test only) https://github.com/ultralytics/yolov3/issues/931
-    #     #     img_size = x.shape[-2:]  # height, width
-    #     #     s = [0.83, 0.67]  # scales
-    #     #     y = []
-    #     #     for i, xi in enumerate((x,
-    #     #                             scale_img(x.flip(3), s[0], same_shape=False),  # flip-lr and scale
-    #     #                             scale_img(x, s[1], same_shape=False),  # scale
-    #     #                             )):
-    #     #         # cv2.imwrite('img%g.jpg' % i, 255 * xi[0].numpy().transpose((1, 2, 0))[:, :, ::-1])
-    #     #         y.append(self.forward_once(xi, encoder_inps=encoder_inps)[0])
-    #     #
-    #     #     y[1][..., :4] /= s[0]  # scale
-    #     #     y[1][..., 0] = img_size[1] - y[1][..., 0]  # flip lr
-    #     #     y[2][..., :4] /= s[1]  # scale
-    #     #
-    #     #     y = torch.cat(y, 1)
-    #     #     return y, None
-    #
-    # def forward_once(self, x, augment=False, verbose=False, encoder_inps={}):
-    #     img_size = x.shape[-2:]  # height, width
-    #     yolo_out, out = [], []
-    #     if verbose:
-    #         print('0', x.shape)
-    #         str = ''
-    #
-    #     # ToDo Smita: Not considering augment for now
-    #     # # Augment images (inference and test only)
-    #     # if augment:  # https://github.com/ultralytics/yolov3/issues/931
-    #     #     nb = x.shape[0]  # batch size
-    #     #     s = [0.83, 0.67]  # scales
-    #     #     x = torch.cat((x,
-    #     #                    scale_img(x.flip(3), s[0]),  # flip-lr and scale
-    #     #                    scale_img(x, s[1]),  # scale
-    #     #                    ), 0)
-    #
-    #     for i, module in enumerate(self.module_list):
-    #         name = module.__class__.__name__
-    #
-    #         if name in ['FeatureConcat']:  # concat
-    #             if verbose:
-    #                 l = [i - 1] + module.layers  # layers
-    #                 sh = [list(x.shape)] + [list(out[i].shape) for i in module.layers]  # shapes
-    #                 str = ' >> ' + ' + '.join(['layer %g %s' % x for x in zip(l, sh)])
-    #             # Smita change: pass encoder inputs along
-    #             x = module(x, out, encoder_inps)  # FeatureConcat()
-    #         elif name == 'YOLOLayer':
-    #             yolo_out.append(module(x, out))
-    #         else:  # run module directly, i.e. mtype = 'convolutional', 'upsample', 'maxpool', 'batchnorm2d' etc.
-    #             x = module(x)
-    #
-    #         # ToDO Smita: Changed this
-    #         # out.append(x if self.routs[i] else [])
-    #         out.append(x if i in self.routs else [])
-    #         if verbose:
-    #             print('%g/%g %s -' % (i, len(self.module_list), name), list(x.shape), str)
-    #             str = ''
-    #
-    #     if self.training:  # train
-    #         return yolo_out
-    #     # elif ONNX_EXPORT:  # export
-    #     #     x = [torch.cat(x, 0) for x in zip(*yolo_out)]
-    #     #     return x[0], torch.cat(x[1:3], 1)  # scores, boxes: 3780x80, 3780x4
-    #     else:  # inference or test
-    #         x, p = zip(*yolo_out)  # inference output, training output
-    #         x = torch.cat(x, 1)  # cat yolo outputs
-    #
-    #         # ToDo Smita: Not considering augment for now
-    #         # if augment:  # de-augment results
-    #         #     x = torch.split(x, nb, dim=0)
-    #         #     x[1][..., :4] /= s[0]  # scale
-    #         #     x[1][..., 0] = img_size[1] - x[1][..., 0]  # flip lr
-    #         #     x[2][..., :4] /= s[1]  # scale
-    #         #     x = torch.cat(x, 1)
-    #         return x, p
 
     def fuse(self):
         # Fuse Conv2d + BatchNorm2d layers throughout model

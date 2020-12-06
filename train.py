@@ -15,15 +15,12 @@ import cv2
 import test
 import torch.nn.functional as F
 
-# import test  # import test.py to get mAP after each epoch
-# from models import *
-# from utils.datasets import *
 from utils.utils import *
 from models.midasyolo3 import MidasYoloNet
 from dataloader.dataloader import LoadImagesAndLabels
 from utils import torch_utils
 from utils.yolo_utils import parse_data_cfg, compute_loss, print_model_biases, fitness
-from utils.midas_utils import ssim, SSIM
+from utils.midas_utils import SSIM
 
 mixed_precision = True
 try:  # Mixed precision training https://github.com/NVIDIA/apex
