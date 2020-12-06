@@ -37,7 +37,7 @@ def test(cfg,
 
         # Initialize model
         # model = Darknet(cfg, img_size)
-        model = MidasYoloNet(path='model-f6b98070.pt', yolo_cfg=cfg).to(device)
+        model = MidasYoloNet(path='model-f6b98070.pt', yolo_cfg=cfg, device=device).to(device)
 
         # Load weights
         # ToDo Smita: Put this back

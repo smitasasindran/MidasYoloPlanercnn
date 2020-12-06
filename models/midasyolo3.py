@@ -7,10 +7,10 @@ import torch.nn as nn
 import re
 
 from models.base_model import BaseModel
-from models import blocks, yolo3_net
+from models import blocks, yolo3_net, planercnn_net
 from models import layers
 from utils.torch_utils import model_info
-
+from utils.planercnn_config import Config
 
 class MidasYoloNet(BaseModel):
     """Network for monocular depth estimation.
@@ -18,7 +18,7 @@ class MidasYoloNet(BaseModel):
 
     # ToDo Smita: Pass Config file
     def __init__(self, path=None, features=256, non_negative=True, yolo_cfg='',
-                 augment=False, image_size=None):
+                 augment=False, image_size=None, device='cpu'):
         """Init.
 
         Args:
@@ -97,6 +97,10 @@ class MidasYoloNet(BaseModel):
         self.yolo_layers = self.yolo_decoder.yolo_layers
         # self.module_list = self.yolo_decoder.module_list
 
+        # Add planercnn model. Can directly add, as its backbone is also Resnet101, same as midas
+        planercnn_config = Config(None)
+        self.planercnn_decoder = planercnn_net.MaskRCNN(planercnn_config, device)
+
 
     def modulelist(self):
         return self.yolo_decoder.module_list
@@ -161,11 +165,14 @@ class MidasYoloNet(BaseModel):
         # print("After yolo decoder call")
         # print("out: ", out.shape)
         # print("Final Midas output: ", midas_output.shape)
+        #
+        # Planercnn decoder takes raw input, and then the three encoder inputs. Called using predict function
+        mode = 'training' if self.training else 'inference'
+        # planercnn_out = self.planercnn_decoder.predict(x, mode, encoder_inps=[layer_1_rn, layer_2_rn, layer_3_rn, layer_4_rn])
 
-        # ToDo: Send out Midas output too
-        # return midas_output
+        # ToDo: Send out Planercnn output too
         return midas_output, yolo_decoder
-        # return yolo_decoder
+
 
     # def set_trainable(self, layer_regex, model=None, indent=0, verbose=1):
     #     """Sets model layers as trainable if their names match
@@ -184,7 +191,7 @@ class MidasYoloNet(BaseModel):
             "encoder": r"(pretrained.*)|(scratch.layer.*)",
             "midas": r"(scratch.refinenet.*)|(scratch.output.*)",
             "yolo": r"(yolo_head.*)|(yolo_connect.*)|(yolo_decoder.*)",
-            "planercnn": r"(planer_head.*)|(planer_decoder.*)"
+            "planercnn": r"(planercnn_head.*)|(planercnn_decoder.*)"
         }
 
         # First set everything to true, then freeze layers
@@ -213,7 +220,7 @@ class MidasYoloNet(BaseModel):
         self.load(path)
 
     def load_planercnn_weights(self, path):
-        pass
+        self.planercnn_decoder.load_weights(path)
 
 
     def load_yolo_weights(self, path, device):
@@ -258,9 +265,6 @@ class MidasYoloNet(BaseModel):
             raise KeyError(s) from e
         # del yolo_weight_dict
 
-
-
-        pass
 
     def info(self, verbose=False):
         model_info(self, verbose)

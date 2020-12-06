@@ -112,7 +112,7 @@ def train():
     # Initialize model
     # ToDO Smita Change
     # model = Darknet(cfg).to(device)
-    model = MidasYoloNet(path='model-f6b98070.pt', yolo_cfg=cfg).to(device)
+    model = MidasYoloNet(path='model-f6b98070.pt', yolo_cfg=cfg, device=device).to(device)
     # print(model)
     # print("\n\n\n\n=======================================")
     # print_model(model)
@@ -147,7 +147,7 @@ def train():
         # attempt_download(weights)
         model.load_yolo_weights(opt.init_yolo_weights, device)
         model.load_midas_weights(opt.init_midas_weights)
-        model.load_planercnn_weights(opt.init_planercnn_weights)
+        # model.load_planercnn_weights(opt.init_planercnn_weights)
 
     elif weights.endswith('.pt'):  # pytorch format
         # possible weights are '*.pt', 'yolov3-spp.pt', 'yolov3-tiny.pt' etc.
@@ -321,15 +321,15 @@ def train():
             # Compute loss
             # loss, loss_items = compute_loss(pred, targets, model)
             yolo_loss, loss_items = compute_loss(pred[1], targets, model)
-            print("loss=", yolo_loss)
-            print("loss items=", loss_items)
+            # print("loss=", yolo_loss)
+            # print("loss items=", loss_items)
             # print(pred[0])
             ssim_fn = SSIM(window_size = 11)
             midas_targets = midas_targets.unsqueeze(1)
             midas_pred = pred[0].unsqueeze(1)
             midas_ssim = ssim_fn(midas_pred, midas_targets)
             midas_loss = 1 - midas_ssim # ssim function gives higher similarity as close to 1.
-            print("midas ssim loss=", midas_loss, ", ssim=", midas_ssim)
+            # print("midas ssim loss=", midas_loss, ", ssim=", midas_ssim)
 
             # ToDo Smita: Pass arguments properly
             loss = lambda_yolo * yolo_loss + lambda_midas * midas_loss # + lambda_planar * planar_loss

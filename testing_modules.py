@@ -129,7 +129,7 @@ if __name__ == "__main__":
 
     ## Testing midas+yolo
     cfg = "cfg/yolov3-custom.cfg"
-    midasyolo_model = MidasYoloNet(path='model-f6b98070.pt',  yolo_cfg=cfg)
+    midasyolo_model = MidasYoloNet(path='model-f6b98070.pt',  yolo_cfg=cfg, device=device)
 
     print("MIDAS YOLO COMBINED MODEL ========================")
     print(midasyolo_model)
