@@ -286,7 +286,7 @@ def train():
 
         mloss = torch.zeros(4).to(device)  # mean losses
         midas_loss = torch.zeros(1).to(device) # loss for midas
-        print(('\n' + '%10s' * 8) % ('Epoch', 'gpu_mem', 'GIoU', 'obj', 'cls', 'total', 'targets', 'img_size'))
+        print(('\n' + '%10s' * 8 + '%15s') % ('Epoch', 'gpu_mem', 'GIoU', 'obj', 'cls', 'total', 'targets', 'img_size', 'midas_ssim'))
         pbar = tqdm(enumerate(dataloader), total=nb)  # progress bar
         for i, (imgs, targets, paths, _, midas_targets) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
@@ -323,7 +323,7 @@ def train():
             yolo_loss, loss_items = compute_loss(pred[1], targets, model)
             print("loss=", yolo_loss)
             print("loss items=", loss_items)
-            print(pred[0])
+            # print(pred[0])
             ssim_fn = SSIM(window_size = 11)
             midas_targets = midas_targets.unsqueeze(1)
             midas_pred = pred[0].unsqueeze(1)
@@ -357,7 +357,7 @@ def train():
             # Print batch results
             mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
             mem = '%.3gG' % (torch.cuda.memory_cached() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
-            s = ('%10s' * 2 + '%10.3g' * 6) % ('%g/%g' % (epoch, epochs - 1), mem, *mloss, len(targets), img_size)
+            s = ('%10s' * 2 + '%10.3g' * 6 + '%15.3g') % ('%g/%g' % (epoch, epochs - 1), mem, *mloss, len(targets), img_size, midas_ssim)
             pbar.set_description(s)
 
             # Plot images with bounding boxes
