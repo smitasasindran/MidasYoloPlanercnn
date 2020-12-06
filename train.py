@@ -163,21 +163,19 @@ def train():
             raise KeyError(s) from e
 
         # load optimizer
-        if chkpt['optimizer'] is not None:
-            optimizer.load_state_dict(chkpt['optimizer'])
-            best_fitness = chkpt['best_fitness']
+        # if chkpt['optimizer'] is not None:
+        #     optimizer.load_state_dict(chkpt['optimizer'])
+        #     best_fitness = chkpt['best_fitness']
 
-        # load results
-        if chkpt.get('training_results') is not None:
-            with open(results_file, 'w') as file:
-                file.write(chkpt['training_results'])  # write results.txt
+        # # load results
+        # if chkpt.get('training_results') is not None:
+        #     with open(results_file, 'w') as file:
+        #         file.write(chkpt['training_results'])  # write results.txt
 
         # ToDO Smita: Decide on this...
         # start_epoch = chkpt['epoch'] + 1
         start_epoch = 0
         del chkpt
-
-
 
     # ToDo Smita: Put back
     # elif len(weights) > 0:  # darknet format
@@ -384,14 +382,15 @@ def train():
         if save:
             with open(results_file, 'r') as f:
                 # Create checkpoint
-                chkpt = {'epoch': epoch,
-                         'best_fitness': best_fitness,
-                         'training_results': f.read(),
+                chkpt = { #'epoch': epoch,
+                         # 'best_fitness': best_fitness,
+                         # 'training_results': f.read(),
                          'model': ema.ema.module.state_dict() if hasattr(model, 'module') else ema.ema.state_dict(),
-                         'optimizer': None if final_epoch else optimizer.state_dict()}
+                         # 'optimizer': None if final_epoch else optimizer.state_dict()
+                    }
 
             # Save last checkpoint
-            torch.save(chkpt, last)
+            # torch.save(chkpt, last)
 
             # Save best checkpoint
             if (best_fitness == fi) and not final_epoch:
