@@ -182,6 +182,11 @@ def train():
     #     # possible weights are '*.weights', 'yolov3-tiny.conv.15',  'darknet53.conv.74' etc.
     #     load_darknet_weights(model, weights)
 
+    # ToDo Freeze layers as per command line args
+    print("Freeeezing layers:")
+    model.freeze_layers(["encoder", "midas"])
+    model.info(verbose=True)
+
     # Mixed precision training https://github.com/NVIDIA/apex
     if mixed_precision:
         model, optimizer = amp.initialize(model, optimizer, opt_level='O1', verbosity=0)

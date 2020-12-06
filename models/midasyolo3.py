@@ -4,10 +4,12 @@ https://github.com/thomasjpfan/pytorch_refinenet/blob/master/pytorch_refinenet/r
 """
 import torch
 import torch.nn as nn
+import re
 
 from models.base_model import BaseModel
 from models import blocks, yolo3_net
 from models import layers
+from utils.torch_utils import model_info
 
 
 class MidasYoloNet(BaseModel):
@@ -171,10 +173,40 @@ class MidasYoloNet(BaseModel):
         else:
             return yolo_decoder
 
-    def freeze_encoder(self):
-        # Function to set Midas encoder layers to required_grad=False
-        for name, param in self.named_parameters():
-            param.requires_grad = False
+    # def set_trainable(self, layer_regex, model=None, indent=0, verbose=1):
+    #     """Sets model layers as trainable if their names match
+    #     the given regular expression.
+    #     """
+    #     for param in self.named_parameters():
+    #         layer_name = param[0]
+    #         trainable = bool(re.fullmatch(layer_regex, layer_name))
+    #         if not trainable:
+    #             param[1].requires_grad = False
+
+
+    def freeze_layers(self, keys):
+        """Sets model layers as frozen if their names match the given regular expression."""
+        layer_regexes = {
+            "encoder": r"(pretrained.*)|(scratch.layer.*)",
+            "midas": r"(scratch.refinenet.*)|(scratch.output.*)",
+            "yolo": r"(yolo_head.*)|(yolo_connect.*)|(yolo_decoder.*)",
+            "planercnn": r"(planer_head.*)|(planer_decoder.*)"
+        }
+
+        # First set everything to true, then freeze layers
+        for param in self.named_parameters():
+            param[1].requires_grad = True
+
+        # If layer needs to be frozen, set requires_grad to false
+        for key in keys:
+            layer_regex = layer_regexes[key]
+            print("Layer regex: ", str(layer_regex))
+
+            for param in self.named_parameters():
+                layer_name = param[0]
+                freeze = bool(re.fullmatch(layer_regex, layer_name))
+                if freeze:
+                    param[1].requires_grad = False
 
 
 
@@ -236,4 +268,5 @@ class MidasYoloNet(BaseModel):
 
         pass
 
-
+    def info(self, verbose=False):
+        model_info(self, verbose)
